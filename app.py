@@ -5,12 +5,10 @@ import psycopg2
 from datetime import datetime
 
 app = Flask(__name__)
-
-# Fixed key for Vercel sessions
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
-# DATABASE CONFIG (NEON)
+# DATABASE CONFIG
 # ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -19,12 +17,11 @@ def get_db_connection():
         return None
     try:
         return psycopg2.connect(DATABASE_URL, sslmode='require')
-    except Exception as e:
-        print(f"Database Connection Error: {e}")
+    except:
         return None
 
 # ==========================
-# SAT QUESTION BANK
+# QUESTION BANK (Full)
 # ==========================
 math_questions = [
     {"question": "Solve for x: 3x - 5 = 16", "options": ["7", "5", "3", "9"], "answer": "7"},
@@ -61,7 +58,7 @@ english_questions = [
 ]
 
 # ==========================
-# MAIN ROUTES
+# ROUTES
 # ==========================
 
 @app.route("/")
@@ -81,21 +78,12 @@ def dashboard():
             cur.execute("SELECT subject, score, total_questions, timestamp FROM quiz_results WHERE username=%s ORDER BY timestamp DESC", (session['username'],))
             rows = cur.fetchall()
             for r in rows:
-                quiz_results.append({
-                    'subject': r[0],
-                    'score': r[1],
-                    'total_questions': r[2],
-                    'timestamp': r[3]
-                })
+                quiz_results.append({'subject': r[0], 'score': r[1], 'total_questions': r[2], 'timestamp': r[3]})
             cur.close()
             conn.close()
         except:
             pass
     return render_template("dashboard.html", quiz_results=quiz_results)
-
-# ==========================
-# CONTENT ROUTES
-# ==========================
 
 @app.route("/math")
 def math():
@@ -108,7 +96,6 @@ def english():
 @app.route("/quiz")
 def quiz():
     if "username" not in session:
-        flash("Please login to take a quiz.")
         return redirect(url_for("login"))
     return render_template("quiz.html")
 
@@ -123,22 +110,37 @@ def start_quiz(duration):
     if "username" not in session:
         return redirect(url_for("login"))
 
-    num_questions = 7 if duration == 30 else 12
-    selected_math = random.sample(math_questions, min(len(math_questions), num_questions))
-    selected_english = random.sample(english_questions, min(len(english_questions), num_questions))
-
     if request.method == "POST":
+        # GET THE QUESTIONS BACK FROM SESSION
+        selected_math = session.get('quiz_math', [])
+        selected_english = session.get('quiz_eng', [])
+        
         results = []
         score = 0
+        
+        # Check Math
         for i, q in enumerate(selected_math, start=1):
             ans = request.form.get(f"math_{i}")
-            if ans == q["answer"]: score += 1
-            results.append({"q": q["question"], "is_correct": (ans == q["answer"])})
+            is_correct = (str(ans) == str(q["answer"]))
+            if is_correct: score += 1
+            results.append({
+                "question": q["question"], 
+                "user_answer": ans, 
+                "correct_answer": q["answer"], 
+                "is_correct": is_correct
+            })
         
+        # Check English
         for i, q in enumerate(selected_english, start=1):
             ans = request.form.get(f"eng_{i}")
-            if ans == q["answer"]: score += 1
-            results.append({"q": q["question"], "is_correct": (ans == q["answer"])})
+            is_correct = (str(ans) == str(q["answer"]))
+            if is_correct: score += 1
+            results.append({
+                "question": q["question"], 
+                "user_answer": ans, 
+                "correct_answer": q["answer"], 
+                "is_correct": is_correct
+            })
 
         total_qs = len(results)
         
@@ -152,13 +154,21 @@ def start_quiz(duration):
             cur.close()
             conn.close()
 
+        # Clear session quiz data
+        session.pop('quiz_math', None)
+        session.pop('quiz_eng', None)
+
         return render_template("quiz-results.html", results=results, total_score=score, total_questions=total_qs)
 
-    return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
+    # GET REQUEST: Pick questions and SAVE to session
+    num_questions = 7 if duration == 30 else 12
+    selected_math = random.sample(math_questions, min(len(math_questions), num_questions))
+    selected_english = random.sample(english_questions, min(len(english_questions), num_questions))
+    
+    session['quiz_math'] = selected_math
+    session['quiz_eng'] = selected_english
 
-# ==========================
-# AUTH ROUTES
-# ==========================
+    return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -175,7 +185,7 @@ def login():
             if user:
                 session["username"] = username
                 return redirect(url_for("dashboard"))
-        flash("Invalid credentials")
+        flash("Invalid login credentials.")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
@@ -189,10 +199,9 @@ def register():
             try:
                 cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
                 conn.commit()
-                flash("Account created! Please login.")
                 return redirect(url_for("login"))
             except:
-                flash("Error: Username might already exist.")
+                flash("Error creating user.")
             finally:
                 cur.close()
                 conn.close()
