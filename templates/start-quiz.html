@@ -5,17 +5,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script>
         let totalTime = {{ duration }} * 60;
-
         function startTimer() {
             const timer = document.getElementById("timer");
             const form = document.getElementById("quiz-form");
-
             const interval = setInterval(() => {
                 let minutes = Math.floor(totalTime / 60);
                 let seconds = totalTime % 60;
                 timer.innerText = minutes + "m " + seconds + "s";
                 totalTime--;
-
                 if (totalTime < 0) {
                     clearInterval(interval);
                     alert("Time's up!");
@@ -23,38 +20,37 @@
                 }
             }, 1000);
         }
-
         window.onload = startTimer;
     </script>
 </head>
 <body>
 
 <div class="quiz-container">
-
     <div class="quiz-main">
-        <h2>Math Section</h2>
         <form method="post" id="quiz-form">
-
+            <h2>Math Section</h2>
             {% for q in math_questions %}
             <div class="question-box">
                 <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
                 {% for opt in q.options %}
-                <label><input type="radio" name="math_{{ loop.index }}" value="{{ opt }}"> {{ opt }}</label><br>
+                <label>
+                    <input type="radio" name="math_{{ loop.index }}" value="{{ opt }}"> {{ opt }}
+                </label><br>
                 {% endfor %}
             </div>
             {% endfor %}
 
             <h2>English Section</h2>
-
             {% for q in english_questions %}
             <div class="question-box">
                 <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
                 {% for opt in q.options %}
-                <label><input type="radio" name="eng_{{ loop.index }}" value="{{ opt }}"> {{ opt }}</label><br>
+                <label>
+                    <input type="radio" name="eng_{{ loop.index }}" value="{{ opt }}"> {{ opt }}
+                </label><br>
                 {% endfor %}
             </div>
             {% endfor %}
-
         </form>
     </div>
 
@@ -63,7 +59,6 @@
         <p id="timer"></p>
         <button form="quiz-form" type="submit" class="btn">Submit Quiz</button>
     </div>
-
 </div>
 
 </body>
