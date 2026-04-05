@@ -11,7 +11,9 @@
             const interval = setInterval(() => {
                 let minutes = Math.floor(totalTime / 60);
                 let seconds = totalTime % 60;
-                timer.innerText = minutes + "m " + seconds + "s";
+                // Add leading zero to seconds for cleaner look
+                let displaySeconds = seconds < 10 ? "0" + seconds : seconds;
+                timer.innerText = minutes + "m " + displaySeconds + "s";
                 totalTime--;
                 if (totalTime < 0) {
                     clearInterval(interval);
@@ -30,12 +32,12 @@
         <form method="post" id="quiz-form">
             <h2>Math Section</h2>
             {% for q in math_questions %}
-            <div class="question-box">
-                <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
-                {% set outer_loop = loop %}
+            {% set outer_loop = loop %} <div class="question-box">
+                <p><strong>Q{{ outer_loop.index }}:</strong> {{ q.question }}</p>
                 {% for opt in q.options %}
-                <label>
-                    <input type="radio" name="math_{{ outer_loop.index }}" value="{{ opt }}" required> {{ opt }}
+                <label class="option-label">
+                    <input type="radio" name="math_{{ outer_loop.index }}" value="{{ opt }}" required> 
+                    {{ opt }}
                 </label><br>
                 {% endfor %}
             </div>
@@ -43,12 +45,12 @@
 
             <h2>English Section</h2>
             {% for q in english_questions %}
-            <div class="question-box">
-                <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
-                {% set outer_loop = loop %}
+            {% set outer_loop = loop %} <div class="question-box">
+                <p><strong>Q{{ outer_loop.index }}:</strong> {{ q.question }}</p>
                 {% for opt in q.options %}
-                <label>
-                    <input type="radio" name="eng_{{ outer_loop.index }}" value="{{ opt }}" required> {{ opt }}
+                <label class="option-label">
+                    <input type="radio" name="eng_{{ outer_loop.index }}" value="{{ opt }}" required> 
+                    {{ opt }}
                 </label><br>
                 {% endfor %}
             </div>
@@ -57,9 +59,11 @@
     </div>
 
     <div class="quiz-sidebar">
-        <h3>Time Remaining</h3>
-        <p id="timer"></p>
-        <button form="quiz-form" type="submit" class="btn">Submit Quiz</button>
+        <div class="timer-card">
+            <h3>Time Remaining</h3>
+            <p id="timer" class="timer-display">--m --s</p>
+            <button form="quiz-form" type="submit" class="btn btn-submit">Submit Quiz</button>
+        </div>
     </div>
 </div>
 
