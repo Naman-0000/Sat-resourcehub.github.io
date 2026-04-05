@@ -5,6 +5,7 @@ import psycopg2
 from datetime import datetime
 
 app = Flask(__name__)
+# A fixed secret key is mandatory for Vercel
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -16,6 +17,7 @@ def get_db_connection():
     if not DATABASE_URL:
         return None
     try:
+        # Neon requires sslmode=require
         return psycopg2.connect(DATABASE_URL, sslmode='require')
     except:
         return None
@@ -23,6 +25,7 @@ def get_db_connection():
 # ==========================
 # FULL SAT QUESTION BANK
 # ==========================
+# (Keep all questions here - no IDs needed for this logic)
 math_questions = [
     {"question": "Solve for x: 3x - 5 = 16", "options": ["7", "5", "3", "9"], "answer": "7"},
     {"question": "If x² = 49, what are the values of x?", "options": ["7", "-7", "7 and -7", "0"], "answer": "7 and -7"},
@@ -78,7 +81,12 @@ def dashboard():
             cur.execute("SELECT subject, score, total_questions, timestamp FROM quiz_results WHERE username=%s ORDER BY timestamp DESC", (session['username'],))
             rows = cur.fetchall()
             for r in rows:
-                quiz_results.append({'subject': r[0], 'score': r[1], 'total_questions': r[2], 'timestamp': r[3]})
+                quiz_results.append({
+                    'subject': r[0],
+                    'score': r[1],
+                    'total_questions': r[2],
+                    'timestamp': r[3]
+                })
             cur.close()
             conn.close()
         except:
@@ -91,89 +99,93 @@ def start_quiz(duration):
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        # GET THE QUESTIONS SAVED IN SESSION
-        selected_math = session.get('quiz_math_active', [])
-        selected_english = session.get('quiz_eng_active', [])
+        # Pull only the ANSWERS from the session to keep it small
+        math_answers = session.get('m_ans', [])
+        eng_answers = session.get('e_ans', [])
+        math_qs = session.get('m_txt', [])
+        eng_qs = session.get('e_txt', [])
         
         results = []
         score = 0
         
-        # Grade Math (matching math_1, math_2 etc)
-        for i, q in enumerate(selected_math, start=1):
-            user_ans = request.form.get(f"math_{i}")
-            is_correct = (str(user_ans).strip() == str(q["answer"]).strip())
-            if is_correct: score += 1
-            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
-        
-        # Grade English (matching eng_1, eng_2 etc)
-        for i, q in enumerate(selected_english, start=1):
-            user_ans = request.form.get(f"eng_{i}")
-            is_correct = (str(user_ans).strip() == str(q["answer"]).strip())
-            if is_correct: score += 1
-            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
+        # Grade Math
+        for i, correct_val in enumerate(math_answers, start=1):
+            user_val = request.form.get(f"math_{i}")
+            correct = (str(user_val) == str(correct_val))
+            if correct: score += 1
+            results.append({"question": math_qs[i-1], "user_answer": user_val, "correct_answer": correct_val, "is_correct": correct})
 
-        total_qs = len(results)
-        
-        # SAVE TO DB
+        # Grade English
+        for i, correct_val in enumerate(eng_answers, start=1):
+            user_val = request.form.get(f"eng_{i}")
+            correct = (str(user_val) == str(correct_val))
+            if correct: score += 1
+            results.append({"question": eng_qs[i-1], "user_answer": user_val, "correct_answer": correct_val, "is_correct": correct})
+
+        # Save to DB
         conn = get_db_connection()
         if conn:
             cur = conn.cursor()
             cur.execute("INSERT INTO quiz_results (username, subject, score, total_questions) VALUES (%s, %s, %s, %s)", 
-                        (session['username'], "SAT Mixed", score, total_qs))
+                        (session['username'], "SAT Mixed", score, len(results)))
             conn.commit()
             cur.close()
             conn.close()
 
-        # Clear session quiz data
-        session.pop('quiz_math_active', None)
-        session.pop('quiz_eng_active', None)
+        return render_template("quiz-results.html", results=results, total_score=score, total_questions=len(results))
 
-        return render_template("quiz-results.html", results=results, total_score=score, total_questions=total_qs)
-
-    # --- GET REQUEST ---
-    num_questions = 7 if duration == 30 else 12
-    sel_math = random.sample(math_questions, min(len(math_questions), num_questions))
-    sel_eng = random.sample(english_questions, min(len(english_questions), num_questions))
+    # GET REQUEST
+    num = 7 if duration == 30 else 12
+    sel_math = random.sample(math_questions, min(len(math_questions), num))
+    sel_eng = random.sample(english_questions, min(len(english_questions), num))
     
-    # SAVE to session so we can grade them on POST
-    session['quiz_math_active'] = sel_math
-    session['quiz_eng_active'] = sel_eng
+    # Store ONLY the text and answers in session (Minimal size)
+    session['m_ans'] = [q['answer'] for q in sel_math]
+    session['e_ans'] = [q['answer'] for q in sel_eng]
+    session['m_txt'] = [q['question'] for q in sel_math]
+    session['e_txt'] = [q['question'] for q in sel_eng]
 
     return render_template("start-quiz.html", math_questions=sel_math, english_questions=sel_eng, duration=duration)
 
-# (KEEP YOUR LOGIN/REGISTER/LOGOUT ROUTES HERE)
+# (KEEP YOUR LOGIN, REGISTER, LOGOUT, MATH, ENGLISH, QUIZ-OPTIONS ROUTES BELOW)
+@app.route("/math")
+def math(): return render_template("math.html")
+
+@app.route("/english")
+def english(): return render_template("english.html")
+
+@app.route("/quiz-options")
+def quiz_options(): return render_template("quiz-options.html")
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        u, p = request.form.get("username"), request.form.get("password")
         conn = get_db_connection()
         if conn:
             cur = conn.cursor()
-            cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
+            cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
             user = cur.fetchone()
             cur.close()
             conn.close()
             if user:
-                session["username"] = username
+                session["username"] = u
                 return redirect(url_for("dashboard"))
-        flash("Invalid login credentials.")
+        flash("Invalid login")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        u, p = request.form.get("username"), request.form.get("password")
         conn = get_db_connection()
         if conn:
             cur = conn.cursor()
             try:
-                cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+                cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (u, p))
                 conn.commit()
                 return redirect(url_for("login"))
-            except:
-                flash("User already exists.")
+            except: pass
             finally:
                 cur.close()
                 conn.close()
