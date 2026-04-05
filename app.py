@@ -3,23 +3,22 @@ import random
 import os
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # needed for session management
+
+# IMPORTANT: Do NOT use os.urandom(24) on Vercel. 
+# It must be a fixed string so the session stays valid across requests.
+app.secret_key = "sat_hub_permanent_key_2024" 
 
 # ==========================
-# DATABASE BYPASSED (Temporary Fix)
+# DATABASE BYPASSED
 # ==========================
-
-# We are skipping the DB connection to stop the "Host name not known" crash.
 def get_db_connection():
     return None
 
 def init_db():
-    pass # Do nothing
-
-# init_db()  # DISABLED: This was causing your crash
+    pass
 
 # ==========================
-# EXPANDED SAT QUESTION BANK
+# SAT QUESTION BANK
 # ==========================
 
 math_questions = [
@@ -139,14 +138,14 @@ def start_quiz(duration):
     )
 
 # ==========================
-# LOGIN / REGISTER ROUTES (NO-DB VERSION)
+# LOGIN / REGISTER (BYPASSED)
 # ==========================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form["username"]
-        # Any username works now! 
+        username = request.form.get("username", "Guest")
+        # Direct login: Any username works
         session["username"] = username
         return redirect(url_for("home"))
     return render_template("login.html")
@@ -154,14 +153,17 @@ def login():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        flash("Registration is automated. Just use any name on the login page!")
+        flash("Registration auto-completed. Please login with any name!")
         return redirect(url_for("login"))
     return render_template("register.html")
 
 @app.route("/logout")
 def logout():
-    session.pop("username", None)
+    session.clear()
     return redirect(url_for("home"))
 
+# Required for Vercel
+app.debug = False
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
