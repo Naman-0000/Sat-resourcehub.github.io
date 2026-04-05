@@ -32,9 +32,10 @@
             {% for q in math_questions %}
             <div class="question-box">
                 <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
+                {% set outer_loop = loop %}
                 {% for opt in q.options %}
                 <label>
-                    <input type="radio" name="math_{{ loop.index }}" value="{{ opt }}"> {{ opt }}
+                    <input type="radio" name="math_{{ outer_loop.index }}" value="{{ opt }}" required> {{ opt }}
                 </label><br>
                 {% endfor %}
             </div>
@@ -44,9 +45,10 @@
             {% for q in english_questions %}
             <div class="question-box">
                 <p><strong>Q{{ loop.index }}:</strong> {{ q.question }}</p>
+                {% set outer_loop = loop %}
                 {% for opt in q.options %}
                 <label>
-                    <input type="radio" name="eng_{{ loop.index }}" value="{{ opt }}"> {{ opt }}
+                    <input type="radio" name="eng_{{ outer_loop.index }}" value="{{ opt }}" required> {{ opt }}
                 </label><br>
                 {% endfor %}
             </div>
