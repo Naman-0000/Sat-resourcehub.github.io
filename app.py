@@ -6,7 +6,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Fixed key for Vercel - makes sure you stay logged in
+# Fixed key for Vercel
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -177,7 +177,7 @@ def register():
                 conn.commit()
                 flash("Registered successfully!")
                 return redirect(url_for("login"))
-            except:
+            except Exception:
                 flash("Username already exists.")
             finally:
                 cur.close()
