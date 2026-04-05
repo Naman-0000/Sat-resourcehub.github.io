@@ -5,7 +5,7 @@ import psycopg2
 from datetime import datetime
 
 app = Flask(__name__)
-# A fixed secret key is mandatory for Vercel
+# Vercel needs a static secret key to keep sessions alive across serverless spins
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -17,51 +17,19 @@ def get_db_connection():
     if not DATABASE_URL:
         return None
     try:
-        # Neon requires sslmode=require
+        # Neon.tech requires sslmode=require for external connections
         return psycopg2.connect(DATABASE_URL, sslmode='require')
     except:
         return None
 
 # ==========================
-# FULL SAT QUESTION BANK
+# QUESTION BANKS
 # ==========================
-# (Keep all questions here - no IDs needed for this logic)
-math_questions = [
-    {"question": "Solve for x: 3x - 5 = 16", "options": ["7", "5", "3", "9"], "answer": "7"},
-    {"question": "If x² = 49, what are the values of x?", "options": ["7", "-7", "7 and -7", "0"], "answer": "7 and -7"},
-    {"question": "What is the slope of y = 4x + 2?", "options": ["4", "2", "-4", "0"], "answer": "4"},
-    {"question": "Simplify: (x + 2)(x - 2)", "options": ["x² - 4", "x² + 4", "x² - 2", "x² + 2"], "answer": "x² - 4"},
-    {"question": "What is 30% of 250?", "options": ["75", "60", "80", "90"], "answer": "75"},
-    {"question": "Solve for x: 2x + 9 = 21", "options": ["6", "5", "7", "8"], "answer": "6"},
-    {"question": "What is the value of 5² + 3?", "options": ["28", "25", "23", "30"], "answer": "28"},
-    {"question": "If 4x = 36, what is x?", "options": ["8", "9", "7", "6"], "answer": "9"},
-    {"question": "What is the median of 3, 7, 9, 11, 15?", "options": ["9", "7", "11", "10"], "answer": "9"},
-    {"question": "Factor: x² + 5x + 6", "options": ["(x+2)(x+3)", "(x+1)(x+6)", "(x+2)(x+2)", "(x+3)(x+3)"], "answer": "(x+2)(x+3)"},
-    {"question": "What is 15% of 200?", "options": ["25", "30", "35", "40"], "answer": "30"},
-    {"question": "If y = 3x and x = 4, what is y?", "options": ["12", "7", "9", "16"], "answer": "12"},
-    {"question": "Solve: 5(x - 2) = 20", "options": ["6", "4", "5", "8"], "answer": "6"},
-    {"question": "What is the slope of a horizontal line?", "options": ["0", "Undefined", "1", "-1"], "answer": "0"},
-    {"question": "Simplify: √64", "options": ["6", "7", "8", "9"], "answer": "8"},
-]
-
-english_questions = [
-    {"question": "Choose the correct sentence.", "options": ["She go to school.", "She goes to school.", "She going school.", "She gone school."], "answer": "She goes to school."},
-    {"question": "Synonym of 'meticulous'?", "options": ["Careless", "Precise", "Lazy", "Rough"], "answer": "Precise"},
-    {"question": "Fill blank: He ___ to the store yesterday.", "options": ["go", "went", "gone", "going"], "answer": "went"},
-    {"question": "Choose the correct sentence.", "options": ["They was late.", "They were late.", "They is late.", "They be late."], "answer": "They were late."},
-    {"question": "Synonym of 'abundant'?", "options": ["Scarce", "Plentiful", "Tiny", "Weak"], "answer": "Plentiful"},
-    {"question": "Fill in the blank: She has lived here ___ 2019.", "options": ["since", "for", "from", "by"], "answer": "since"},
-    {"question": "Antonym of 'optimistic'?", "options": ["Hopeful", "Cheerful", "Pessimistic", "Excited"], "answer": "Pessimistic"},
-    {"question": "Choose the correct word: Their / There / They're going home.", "options": ["Their", "There", "They're", "None"], "answer": "They're"},
-    {"question": "Fill blank: The book is ___ the table.", "options": ["on", "in", "at", "by"], "answer": "on"},
-    {"question": "Meaning of 'inevitable'?", "options": ["Avoidable", "Uncertain", "Certain to happen", "Rare"], "answer": "Certain to happen"},
-    {"question": "Choose the grammatically correct sentence.", "options": ["Me and him went.", "He and I went.", "Him and me went.", "I and he gone."], "answer": "He and I went."},
-    {"question": "Synonym of 'rapid'?", "options": ["Slow", "Fast", "Weak", "Heavy"], "answer": "Fast"},
-    {"question": "Fill blank: She is better ___ math than science.", "options": ["in", "at", "on", "with"], "answer": "at"},
-]
+# [KEEP YOUR ENTIRE math_questions = [...] LIST HERE]
+# [KEEP YOUR ENTIRE english_questions = [...] LIST HERE]
 
 # ==========================
-# ROUTES
+# CORE ROUTES
 # ==========================
 
 @app.route("/")
@@ -78,14 +46,17 @@ def dashboard():
     if conn:
         try:
             cur = conn.cursor()
-            cur.execute("SELECT subject, score, total_questions, timestamp FROM quiz_results WHERE username=%s ORDER BY timestamp DESC", (session['username'],))
+            cur.execute("""
+                SELECT subject, score, total_questions, timestamp 
+                FROM quiz_results 
+                WHERE username=%s 
+                ORDER BY timestamp DESC
+            """, (session['username'],))
             rows = cur.fetchall()
             for r in rows:
                 quiz_results.append({
-                    'subject': r[0],
-                    'score': r[1],
-                    'total_questions': r[2],
-                    'timestamp': r[3]
+                    'subject': r[0], 'score': r[1],
+                    'total_questions': r[2], 'timestamp': r[3]
                 })
             cur.close()
             conn.close()
@@ -93,69 +64,80 @@ def dashboard():
             pass
     return render_template("dashboard.html", quiz_results=quiz_results)
 
+# ==========================
+# THE REPAIRED QUIZ LOGIC
+# ==========================
+
 @app.route("/start-quiz/<int:duration>", methods=["GET", "POST"])
 def start_quiz(duration):
     if "username" not in session:
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        # Pull only the ANSWERS from the session to keep it small
+        # 1. Pull correct answers from session (Only strings to keep cookie < 4KB)
         math_answers = session.get('m_ans', [])
         eng_answers = session.get('e_ans', [])
-        math_qs = session.get('m_txt', [])
-        eng_qs = session.get('e_txt', [])
         
         results = []
         score = 0
         
-        # Grade Math
+        # 2. Grade Math
         for i, correct_val in enumerate(math_answers, start=1):
             user_val = request.form.get(f"math_{i}")
-            correct = (str(user_val) == str(correct_val))
-            if correct: score += 1
-            results.append({"question": math_qs[i-1], "user_answer": user_val, "correct_answer": correct_val, "is_correct": correct})
+            is_correct = (str(user_val).strip() == str(correct_val).strip())
+            if is_correct: score += 1
+            results.append({
+                "category": "Math",
+                "user_answer": user_val, 
+                "correct_answer": correct_val, 
+                "is_correct": is_correct
+            })
 
-        # Grade English
+        # 3. Grade English
         for i, correct_val in enumerate(eng_answers, start=1):
             user_val = request.form.get(f"eng_{i}")
-            correct = (str(user_val) == str(correct_val))
-            if correct: score += 1
-            results.append({"question": eng_qs[i-1], "user_answer": user_val, "correct_answer": correct_val, "is_correct": correct})
+            is_correct = (str(user_val).strip() == str(correct_val).strip())
+            if is_correct: score += 1
+            results.append({
+                "category": "English",
+                "user_answer": user_val, 
+                "correct_answer": correct_val, 
+                "is_correct": is_correct
+            })
 
-        # Save to DB
+        # 4. Save to Neon
         conn = get_db_connection()
         if conn:
             cur = conn.cursor()
-            cur.execute("INSERT INTO quiz_results (username, subject, score, total_questions) VALUES (%s, %s, %s, %s)", 
-                        (session['username'], "SAT Mixed", score, len(results)))
+            cur.execute("""
+                INSERT INTO quiz_results (username, subject, score, total_questions) 
+                VALUES (%s, %s, %s, %s)
+            """, (session['username'], "SAT Mixed", score, len(results)))
             conn.commit()
             cur.close()
             conn.close()
 
         return render_template("quiz-results.html", results=results, total_score=score, total_questions=len(results))
 
-    # GET REQUEST
+    # GET REQUEST: Generate Quiz
     num = 7 if duration == 30 else 12
     sel_math = random.sample(math_questions, min(len(math_questions), num))
     sel_eng = random.sample(english_questions, min(len(english_questions), num))
     
-    # Store ONLY the text and answers in session (Minimal size)
+    # Store ONLY answers in session to prevent 500 Internal Error (Cookie overflow)
     session['m_ans'] = [q['answer'] for q in sel_math]
     session['e_ans'] = [q['answer'] for q in sel_eng]
-    session['m_txt'] = [q['question'] for q in sel_math]
-    session['e_txt'] = [q['question'] for q in sel_eng]
+
+    # Shuffle options locally for this specific view
+    # This won't affect the 'answer' stored in session
+    for q in sel_math + sel_eng:
+        random.shuffle(q['options'])
 
     return render_template("start-quiz.html", math_questions=sel_math, english_questions=sel_eng, duration=duration)
 
-# (KEEP YOUR LOGIN, REGISTER, LOGOUT, MATH, ENGLISH, QUIZ-OPTIONS ROUTES BELOW)
-@app.route("/math")
-def math(): return render_template("math.html")
-
-@app.route("/english")
-def english(): return render_template("english.html")
-
-@app.route("/quiz-options")
-def quiz_options(): return render_template("quiz-options.html")
+# ==========================
+# AUTHENTICATION
+# ==========================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -171,7 +153,7 @@ def login():
             if user:
                 session["username"] = u
                 return redirect(url_for("dashboard"))
-        flash("Invalid login")
+        flash("Invalid login credentials.")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
@@ -185,7 +167,8 @@ def register():
                 cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (u, p))
                 conn.commit()
                 return redirect(url_for("login"))
-            except: pass
+            except Exception as e:
+                flash("Username already exists.")
             finally:
                 cur.close()
                 conn.close()
@@ -195,6 +178,16 @@ def register():
 def logout():
     session.clear()
     return redirect(url_for("home"))
+
+# Static Pages
+@app.route("/math")
+def math(): return render_template("math.html")
+
+@app.route("/english")
+def english(): return render_template("english.html")
+
+@app.route("/quiz-options")
+def quiz_options(): return render_template("quiz-options.html")
 
 if __name__ == "__main__":
     app.run()
