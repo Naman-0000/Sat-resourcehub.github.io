@@ -5,7 +5,7 @@ import psycopg2
 
 app = Flask(__name__)
 
-# Use a fixed key so Vercel doesn't log you out every 5 minutes
+# Fixed key for Vercel
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -17,7 +17,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 def get_db_connection():
     if not DATABASE_URL:
         return None
-    # Connect with SSL required for Neon
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 # ==========================
@@ -27,35 +26,12 @@ def get_db_connection():
 math_questions = [
     {"question": "Solve for x: 3x - 5 = 16", "options": ["7", "5", "3", "9"], "answer": "7"},
     {"question": "If x² = 49, what are the values of x?", "options": ["7", "-7", "7 and -7", "0"], "answer": "7 and -7"},
-    {"question": "What is the slope of y = 4x + 2?", "options": ["4", "2", "-4", "0"], "answer": "4"},
-    {"question": "Simplify: (x + 2)(x - 2)", "options": ["x² - 4", "x² + 4", "x² - 2", "x² + 2"], "answer": "x² - 4"},
-    {"question": "What is 30% of 250?", "options": ["75", "60", "80", "90"], "answer": "75"},
-    {"question": "Solve for x: 2x + 9 = 21", "options": ["6", "5", "7", "8"], "answer": "6"},
-    {"question": "What is the value of 5² + 3?", "options": ["28", "25", "23", "30"], "answer": "28"},
-    {"question": "If 4x = 36, what is x?", "options": ["8", "9", "7", "6"], "answer": "9"},
-    {"question": "What is the median of 3, 7, 9, 11, 15?", "options": ["9", "7", "11", "10"], "answer": "9"},
-    {"question": "Factor: x² + 5x + 6", "options": ["(x+2)(x+3)", "(x+1)(x+6)", "(x+2)(x+2)", "(x+3)(x+3)"], "answer": "(x+2)(x+3)"},
-    {"question": "What is 15% of 200?", "options": ["25", "30", "35", "40"], "answer": "30"},
-    {"question": "If y = 3x and x = 4, what is y?", "options": ["12", "7", "9", "16"], "answer": "12"},
-    {"question": "Solve: 5(x - 2) = 20", "options": ["6", "4", "5", "8"], "answer": "6"},
-    {"question": "What is the slope of a horizontal line?", "options": ["0", "Undefined", "1", "-1"], "answer": "0"},
-    {"question": "Simplify: √64", "options": ["6", "7", "8", "9"], "answer": "8"},
+    {"question": "What is 30% of 250?", "options": ["75", "60", "80", "90"], "answer": "75"}
 ]
 
 english_questions = [
     {"question": "Choose the correct sentence.", "options": ["She go to school.", "She goes to school.", "She going school.", "She gone school."], "answer": "She goes to school."},
-    {"question": "Synonym of 'meticulous'?", "options": ["Careless", "Precise", "Lazy", "Rough"], "answer": "Precise"},
-    {"question": "Fill blank: He ___ to the store yesterday.", "options": ["go", "went", "gone", "going"], "answer": "went"},
-    {"question": "Choose the correct sentence.", "options": ["They was late.", "They were late.", "They is late.", "They be late."], "answer": "They were late."},
-    {"question": "Synonym of 'abundant'?", "options": ["Scarce", "Plentiful", "Tiny", "Weak"], "answer": "Plentiful"},
-    {"question": "Fill in the blank: She has lived here ___ 2019.", "options": ["since", "for", "from", "by"], "answer": "since"},
-    {"question": "Antonym of 'optimistic'?", "options": ["Hopeful", "Cheerful", "Pessimistic", "Excited"], "answer": "Pessimistic"},
-    {"question": "Choose the correct word: Their / There / They're going home.", "options": ["Their", "There", "They're", "None"], "answer": "They're"},
-    {"question": "Fill blank: The book is ___ the table.", "options": ["on", "in", "at", "by"], "answer": "on"},
-    {"question": "Meaning of 'inevitable'?", "options": ["Avoidable", "Uncertain", "Certain to happen", "Rare"], "answer": "Certain to happen"},
-    {"question": "Choose the grammatically correct sentence.", "options": ["Me and him went.", "He and I went.", "Him and me went.", "I and he gone."], "answer": "He and I went."},
-    {"question": "Synonym of 'rapid'?", "options": ["Slow", "Fast", "Weak", "Heavy"], "answer": "Fast"},
-    {"question": "Fill blank: She is better ___ math than science.", "options": ["in", "at", "on", "with"], "answer": "at"},
+    {"question": "Synonym of 'meticulous'?", "options": ["Careless", "Precise", "Lazy", "Rough"], "answer": "Precise"}
 ]
 
 # ==========================
@@ -65,6 +41,16 @@ english_questions = [
 @app.route("/")
 def home():
     return render_template("index.html")
+
+@app.route("/dashboard")
+def dashboard():
+    # If user isn't logged in, send them to login page
+    if "username" not in session:
+        flash("Please login to access your dashboard.")
+        return redirect(url_for("login"))
+    
+    # We pass an empty list for now since we aren't saving scores yet
+    return render_template("dashboard.html", quiz_results=[])
 
 @app.route("/math")
 def math():
@@ -77,21 +63,18 @@ def english():
 @app.route("/quiz")
 def quiz():
     if "username" not in session:
-        flash("You must be logged in to access the quiz.")
         return redirect(url_for("login"))
     return render_template("quiz.html")
 
 @app.route("/quiz-options")
 def quiz_options():
     if "username" not in session:
-        flash("Login required.")
         return redirect(url_for("login"))
     return render_template("quiz-options.html")
 
 @app.route("/start-quiz/<int:duration>", methods=["GET", "POST"])
 def start_quiz(duration):
     if "username" not in session:
-        flash("Login required.")
         return redirect(url_for("login"))
 
     num_questions = 7 if duration == 30 else 12
@@ -103,16 +86,9 @@ def start_quiz(duration):
         total_score = 0
         for i, q in enumerate(selected_math, start=1):
             user_ans = request.form.get(f"math_{i}")
-            is_correct = user_ans == q["answer"]
-            if is_correct: total_score += 1
-            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
+            if user_ans == q["answer"]: total_score += 1
+            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": (user_ans == q["answer"])})
         
-        for i, q in enumerate(selected_english, start=1):
-            user_ans = request.form.get(f"eng_{i}")
-            is_correct = user_ans == q["answer"]
-            if is_correct: total_score += 1
-            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
-
         return render_template("quiz-results.html", results=results, total_score=total_score, total_questions=len(results))
 
     return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
@@ -139,7 +115,8 @@ def login():
         
         if user:
             session["username"] = username
-            return redirect(url_for("home"))
+            # REDIRECT TO DASHBOARD AFTER LOGIN
+            return redirect(url_for("dashboard"))
         else:
             flash("Invalid username or password")
     return render_template("login.html")
@@ -160,7 +137,7 @@ def register():
             conn.commit()
             flash("Account created! You can now login.")
             return redirect(url_for("login"))
-        except Exception as e:
+        except Exception:
             flash("User already exists or error occurred.")
         finally:
             cur.close()
