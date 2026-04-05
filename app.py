@@ -1,21 +1,46 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import random
 import os
+import psycopg2
+from psycopg2.extras import DictCursor
 
 app = Flask(__name__)
 
-# IMPORTANT: Do NOT use os.urandom(24) on Vercel. 
-# It must be a fixed string so the session stays valid across requests.
-app.secret_key = "sat_hub_permanent_key_2024" 
+# Fixed key for Vercel so sessions don't break on restart
+app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
-# DATABASE BYPASSED
+# NEON DATABASE CONFIG
 # ==========================
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 def get_db_connection():
-    return None
+    if not DATABASE_URL:
+        return None
+    # Connect with SSL required for Neon
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
-    pass
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+
+# Try to init once on startup
+try:
+    init_db()
+except Exception as e:
+    print(f"DB Init Error: {e}")
 
 # ==========================
 # SAT QUESTION BANK
@@ -98,72 +123,78 @@ def start_quiz(duration):
     if request.method == "POST":
         results = []
         total_score = 0
-
         for i, q in enumerate(selected_math, start=1):
             user_ans = request.form.get(f"math_{i}")
             is_correct = user_ans == q["answer"]
-            if is_correct:
-                total_score += 1
-            results.append({
-                "question": q["question"],
-                "user_answer": user_ans,
-                "correct_answer": q["answer"],
-                "is_correct": is_correct
-            })
-
+            if is_correct: total_score += 1
+            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
+        
         for i, q in enumerate(selected_english, start=1):
             user_ans = request.form.get(f"eng_{i}")
             is_correct = user_ans == q["answer"]
-            if is_correct:
-                total_score += 1
-            results.append({
-                "question": q["question"],
-                "user_answer": user_ans,
-                "correct_answer": q["answer"],
-                "is_correct": is_correct
-            })
+            if is_correct: total_score += 1
+            results.append({"question": q["question"], "user_answer": user_ans, "correct_answer": q["answer"], "is_correct": is_correct})
 
-        return render_template(
-            "quiz-results.html",
-            results=results,
-            total_score=total_score,
-            total_questions=len(results)
-        )
+        return render_template("quiz-results.html", results=results, total_score=total_score, total_questions=len(results))
 
-    return render_template(
-        "start-quiz.html",
-        math_questions=selected_math,
-        english_questions=selected_english,
-        duration=duration
-    )
+    return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
 
 # ==========================
-# LOGIN / REGISTER (BYPASSED)
+# LOGIN / REGISTER (RESTORED)
 # ==========================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "Guest")
-        # Direct login: Any username works
-        session["username"] = username
-        return redirect(url_for("home"))
+        username = request.form.get("username")
+        password = request.form.get("password")
+        conn = get_db_connection()
+        if not conn:
+            flash("Database connection failed.")
+            return redirect(url_for("login"))
+        
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if user:
+            session["username"] = username
+            return redirect(url_for("home"))
+        else:
+            flash("Invalid username or password")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        flash("Registration auto-completed. Please login with any name!")
-        return redirect(url_for("login"))
+        username = request.form.get("username")
+        password = request.form.get("password")
+        conn = get_db_connection()
+        if not conn:
+            flash("Database connection failed.")
+            return redirect(url_for("register"))
+
+        cur = conn.cursor()
+        try:
+            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+            conn.commit()
+            flash("Account created! You can now login.")
+            return redirect(url_for("login"))
+        except psycopg2.errors.UniqueViolation:
+            flash("Username already exists.")
+        except Exception as e:
+            flash("Error creating account.")
+        finally:
+            cur.close()
+            conn.close()
     return render_template("register.html")
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("home"))
-
-# Required for Vercel
-app.debug = False
 
 if __name__ == "__main__":
     app.run()
