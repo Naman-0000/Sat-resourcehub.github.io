@@ -5,17 +5,23 @@ import psycopg2
 from datetime import datetime
 
 app = Flask(__name__)
+
+# Fixed key for Vercel - makes sure you stay logged in
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
-# DATABASE CONFIG
+# DATABASE CONFIG (NEON)
 # ==========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
     if not DATABASE_URL:
         return None
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    try:
+        return psycopg2.connect(DATABASE_URL, sslmode='require')
+    except Exception as e:
+        print(f"Database Connection Error: {e}")
+        return None
 
 # ==========================
 # FULL SAT QUESTION BANK
@@ -57,6 +63,7 @@ english_questions = [
 # ==========================
 # ROUTES
 # ==========================
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -66,18 +73,25 @@ def dashboard():
     if "username" not in session:
         return redirect(url_for("login"))
     
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Fetch user's scores
-    cur.execute("SELECT subject, score, total_questions, timestamp FROM quiz_results WHERE username=%s ORDER BY timestamp DESC", (session['username'],))
-    rows = cur.fetchall()
-    
     quiz_results = []
-    for r in rows:
-        quiz_results.append({'subject': r[0], 'score': r[1], 'total_questions': r[2], 'timestamp': r[3]})
-        
-    cur.close()
-    conn.close()
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subject, score, total_questions, timestamp FROM quiz_results WHERE username=%s ORDER BY timestamp DESC", (session['username'],))
+            rows = cur.fetchall()
+            for r in rows:
+                quiz_results.append({
+                    'subject': r[0],
+                    'score': r[1],
+                    'total_questions': r[2],
+                    'timestamp': r[3]
+                })
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching scores: {e}")
+            
     return render_template("dashboard.html", quiz_results=quiz_results)
 
 @app.route("/math")
@@ -106,12 +120,11 @@ def start_quiz(duration):
     if request.method == "POST":
         results = []
         score = 0
-        # Check Math
         for i, q in enumerate(selected_math, start=1):
             ans = request.form.get(f"math_{i}")
             if ans == q["answer"]: score += 1
             results.append({"q": q["question"], "user": ans, "correct": q["answer"], "is_correct": (ans == q["answer"])})
-        # Check English
+        
         for i, q in enumerate(selected_english, start=1):
             ans = request.form.get(f"eng_{i}")
             if ans == q["answer"]: score += 1
@@ -121,12 +134,13 @@ def start_quiz(duration):
         
         # SAVE TO DB
         conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("INSERT INTO quiz_results (username, subject, score, total_questions) VALUES (%s, %s, %s, %s)", 
-                    (session['username'], "SAT Mixed", score, total_qs))
-        conn.commit()
-        cur.close()
-        conn.close()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO quiz_results (username, subject, score, total_questions) VALUES (%s, %s, %s, %s)", 
+                        (session['username'], "SAT Mixed", score, total_qs))
+            conn.commit()
+            cur.close()
+            conn.close()
 
         return render_template("quiz-results.html", results=results, total_score=score, total_questions=total_qs)
 
@@ -138,15 +152,16 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
         conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
-        user = cur.fetchone()
-        cur.close()
-        conn.close()
-        if user:
-            session["username"] = username
-            return redirect(url_for("dashboard"))
-        flash("Invalid login")
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
+            user = cur.fetchone()
+            cur.close()
+            conn.close()
+            if user:
+                session["username"] = username
+                return redirect(url_for("dashboard"))
+        flash("Invalid login credentials.")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
@@ -155,16 +170,18 @@ def register():
         username = request.form.get("username")
         password = request.form.get("password")
         conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
-            conn.commit()
-            return redirect(url_for("login"))
-        except:
-            flash("Error")
-        finally:
-            cur.close()
-            conn.close()
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+                conn.commit()
+                flash("Registered successfully!")
+                return redirect(url_for("login"))
+            except:
+                flash("Username already exists.")
+            finally:
+                cur.close()
+                conn.close()
     return render_template("register.html")
 
 @app.route("/logout")
