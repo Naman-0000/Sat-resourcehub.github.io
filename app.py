@@ -61,7 +61,7 @@ english_questions = [
 ]
 
 # ==========================
-# ROUTES
+# MAIN ROUTES
 # ==========================
 
 @app.route("/")
@@ -89,10 +89,13 @@ def dashboard():
                 })
             cur.close()
             conn.close()
-        except Exception as e:
-            print(f"Error fetching scores: {e}")
-            
+        except:
+            pass
     return render_template("dashboard.html", quiz_results=quiz_results)
+
+# ==========================
+# CONTENT ROUTES
+# ==========================
 
 @app.route("/math")
 def math():
@@ -101,6 +104,13 @@ def math():
 @app.route("/english")
 def english():
     return render_template("english.html")
+
+@app.route("/quiz")
+def quiz():
+    if "username" not in session:
+        flash("Please login to take a quiz.")
+        return redirect(url_for("login"))
+    return render_template("quiz.html")
 
 @app.route("/quiz-options")
 def quiz_options():
@@ -146,6 +156,10 @@ def start_quiz(duration):
 
     return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
 
+# ==========================
+# AUTH ROUTES
+# ==========================
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -161,7 +175,7 @@ def login():
             if user:
                 session["username"] = username
                 return redirect(url_for("dashboard"))
-        flash("Invalid login credentials.")
+        flash("Invalid credentials")
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
@@ -175,10 +189,10 @@ def register():
             try:
                 cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
                 conn.commit()
-                flash("Registered successfully!")
+                flash("Account created! Please login.")
                 return redirect(url_for("login"))
-            except Exception:
-                flash("Username already exists.")
+            except:
+                flash("Error: Username might already exist.")
             finally:
                 cur.close()
                 conn.close()
