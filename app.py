@@ -2,11 +2,10 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import random
 import os
 import psycopg2
-from psycopg2.extras import DictCursor
 
 app = Flask(__name__)
 
-# Fixed key for Vercel so sessions don't break on restart
+# Use a fixed key so Vercel doesn't log you out every 5 minutes
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -20,27 +19,6 @@ def get_db_connection():
         return None
     # Connect with SSL required for Neon
     return psycopg2.connect(DATABASE_URL, sslmode='require')
-
-def init_db():
-    conn = get_db_connection()
-    if conn:
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
-
-# Try to init once on startup
-try:
-    init_db()
-except Exception as e:
-    print(f"DB Init Error: {e}")
 
 # ==========================
 # SAT QUESTION BANK
@@ -140,7 +118,7 @@ def start_quiz(duration):
     return render_template("start-quiz.html", math_questions=selected_math, english_questions=selected_english, duration=duration)
 
 # ==========================
-# LOGIN / REGISTER (RESTORED)
+# LOGIN / REGISTER
 # ==========================
 
 @app.route("/login", methods=["GET", "POST"])
@@ -150,7 +128,7 @@ def login():
         password = request.form.get("password")
         conn = get_db_connection()
         if not conn:
-            flash("Database connection failed.")
+            flash("Database connection error.")
             return redirect(url_for("login"))
         
         cur = conn.cursor()
@@ -173,7 +151,7 @@ def register():
         password = request.form.get("password")
         conn = get_db_connection()
         if not conn:
-            flash("Database connection failed.")
+            flash("Database connection error.")
             return redirect(url_for("register"))
 
         cur = conn.cursor()
@@ -182,10 +160,8 @@ def register():
             conn.commit()
             flash("Account created! You can now login.")
             return redirect(url_for("login"))
-        except psycopg2.errors.UniqueViolation:
-            flash("Username already exists.")
         except Exception as e:
-            flash("Error creating account.")
+            flash("User already exists or error occurred.")
         finally:
             cur.close()
             conn.close()
