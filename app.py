@@ -6,7 +6,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Fixed key for Vercel
+# Fixed key for Vercel sessions
 app.secret_key = os.environ.get("SECRET_KEY", "sat_hub_permanent_key_2024")
 
 # ==========================
@@ -24,7 +24,7 @@ def get_db_connection():
         return None
 
 # ==========================
-# FULL SAT QUESTION BANK
+# SAT QUESTION BANK
 # ==========================
 math_questions = [
     {"question": "Solve for x: 3x - 5 = 16", "options": ["7", "5", "3", "9"], "answer": "7"},
@@ -123,12 +123,12 @@ def start_quiz(duration):
         for i, q in enumerate(selected_math, start=1):
             ans = request.form.get(f"math_{i}")
             if ans == q["answer"]: score += 1
-            results.append({"q": q["question"], "user": ans, "correct": q["answer"], "is_correct": (ans == q["answer"])})
+            results.append({"q": q["question"], "is_correct": (ans == q["answer"])})
         
         for i, q in enumerate(selected_english, start=1):
             ans = request.form.get(f"eng_{i}")
             if ans == q["answer"]: score += 1
-            results.append({"q": q["question"], "user": ans, "correct": q["answer"], "is_correct": (ans == q["answer"])})
+            results.append({"q": q["question"], "is_correct": (ans == q["answer"])})
 
         total_qs = len(results)
         
